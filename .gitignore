@@ -1,0 +1,10 @@
+# Büyük veri dosyaları
+*.parquet
+
+# Python'un oluşturduğu cache klasörleri
+__pycache__/
+*.pyc
+
+# Sanal ortam klasörleri (eğer kullanıyorsanız)
+.venv
+venv/
