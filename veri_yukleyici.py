@@ -27,13 +27,12 @@ def upload_data_to_db():
         print("Veritabanı bağlantısı kuruluyor ve veri aktarılıyor... BU İŞLEM ÇOK UZUN SÜREBİLİR...")
         start_time = time.time()
         
-        # --- NİHAİ ÇÖZÜM BURADA ---
         # 'engine' nesnesini kullanarak bir 'connection' (bağlantı) bloğu açıyoruz
         # ve to_sql'e bu 'connection' nesnesini veriyoruz.
         with engine.connect() as connection:
             df.to_sql(
                 name='labels',
-                con=connection,  # DİKKAT: 'engine' yerine 'connection'
+                con=connection,  # 'engine' yerine 'connection' kullanılıyor
                 if_exists='replace',
                 index=False,
                 chunksize=1000,
