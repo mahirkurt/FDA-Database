@@ -1,9 +1,6 @@
-# veri_yukleyici.py
-
 import pandas as pd
 import time
-# Bu script doğrudan çalışacağı için, SQLAlchemy'nin kurulu olması gerekir.
-# Hata durumunda aşağıdaki hata mesajı bunu teyit edecektir.
+from sqlalchemy import create_engine # KÜTÜPHANEYİ MANUEL OLARAK IMPORT EDİYORUZ
 
 def upload_data_to_db():
     """
@@ -20,35 +17,40 @@ def upload_data_to_db():
         df = pd.read_parquet(PARQUET_FILE_PATH)
         print(f"Başarılı: {len(df)} satır veri belleğe yüklendi.")
     except FileNotFoundError:
-        print(f"HATA: '{PARQUET_FILE_PATH}' dosyası bulunamadı. Lütfen bu script ile aynı klasörde olduğundan emin olun.")
-        return # Hata varsa programdan çık
+        print(f"HATA: '{PARQUET_FILE_PATH}' dosyası bulunamadı.")
+        return
     except Exception as e:
         print(f"HATA: Parquet dosyası okunurken sorun oluştu: {e}")
         return
 
-    # --- Adım B: Veritabanına Yükle ---
+    # --- Adım B: Veritabanına Yükleme ---
     print("\n--- Adım B: Veritabanına Yükleme Başlatılıyor ---")
-    print("BU İŞLEM ÇOK UZUN SÜREBİLİR (15-30+ DAKİKA). LÜTFEN SABIRLA BEKLEYİN...")
     
-    start_time = time.time()
     try:
+        # Pandas'a URL vermek yerine, SQLAlchemy motorunu biz oluşturuyoruz.
+        print("SQLAlchemy motoru oluşturuluyor...")
+        engine = create_engine(DATABASE_URL)
+        print("Motor oluşturuldu.")
+
+        print("Veri veritabanına aktarılıyor... BU İŞLEM ÇOK UZUN SÜREBİLİR...")
+        start_time = time.time()
+        
+        # to_sql fonksiyonuna, URL yerine, bizim oluşturduğumuz 'engine' nesnesini veriyoruz.
         df.to_sql(
             name='labels',
-            con=DATABASE_URL,
+            con=engine, 
             if_exists='replace',
             index=False,
             chunksize=1000,
             method='multi'
         )
+
         end_time = time.time()
         total_time = end_time - start_time
         
         print(f"\n--- VERİ BAŞARIYLA YÜKLENDİ! ---")
         print(f"Toplam süre: {total_time / 60:.2f} dakika.")
         
-    except ImportError as e:
-        print(f"\nKRİTİK HATA: '{e}'. Bu hatayı alıyorsanız, sqlalchemy veya psycopg2-binary kütüphanesi kurulu değildir.")
-        print("Lütfen Komut Satırı'nı açıp 'pip install \"sqlalchemy<2.0\" \"psycopg2-binary\"' komutunu çalıştırın.")
     except Exception as e:
         print(f"HATA: Veritabanına yükleme sırasında bir sorun oluştu: {e}")
 
