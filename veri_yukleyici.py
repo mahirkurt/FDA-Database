@@ -3,63 +3,53 @@ import psycopg2
 import io
 import time
 
-def upload_data_to_db_professional():
+def upload_data_in_chunks():
     """
-    Pandas to_sql metodunu atlayarak, veriyi psycopg2'nin COPY komutuyla
-    doğrudan ve hızlı bir şekilde veritabanına yükler. Bu en sağlam yöntemdir.
+    Veriyi küçük parçalara (chunk) bölerek belleği verimli kullanır ve
+    PostgreSQL'in COPY komutuyla veritabanına yükler.
     """
     
-    # --- Bilgiler ---
-    # DATABASE_URL yerine, psycopg2'nin anlayacağı DSN formatını kullanıyoruz.
     DB_CONNECTION_STRING = "dbname='neondb' user='neondb_owner' host='ep-fragrant-cell-a9ahgnn4-pooler.gwc.azure.neon.tech' password='npg_PQ0WeHbfjv1x' sslmode='require'"
     PARQUET_FILE_PATH = 'fda_labels.parquet'
     TABLE_NAME = 'labels'
+    CHUNKSIZE = 10000  # Her seferinde kaç satır işleneceği
 
-    # --- Adım A: Veriyi Oku ---
-    print("--- Adım A: Yerel Dosya Okunuyor ---")
-    try:
-        df = pd.read_parquet(PARQUET_FILE_PATH).fillna('')
-        # Tüm sütunları metin (string) formatına çevirerek veritabanı uyumluluğunu garantile
-        df = df.astype(str)
-        print(f"Başarılı: {len(df)} satır veri belleğe yüklendi.")
-    except Exception as e:
-        print(f"HATA: Parquet dosyası okunurken sorun oluştu: {e}")
-        return
-
-    # --- Adım B: Veritabanına Yükleme (Profesyonel Yöntem) ---
-    print(f"\n--- Adım B: '{TABLE_NAME}' tablosuna veri yükleme başlatılıyor ---")
-    
     conn = None
     try:
-        # Veritabanına bağlan
+        print("--- Adım A: Yerel Dosya Okunuyor ---")
+        df = pd.read_parquet(PARQUET_FILE_PATH).fillna('')
+        df = df.astype(str)
+        print(f"Başarılı: {len(df)} satır veri belleğe yüklendi.")
+
         conn = psycopg2.connect(DB_CONNECTION_STRING)
         cursor = conn.cursor()
         print("Veritabanı bağlantısı başarılı.")
 
-        # Eğer tablo varsa sil, sonra yeniden oluştur (temiz başlangıç için)
-        print("Eski tablo (varsa) siliniyor ve yenisi oluşturuluyor...")
+        print(f"\n--- Adım B: '{TABLE_NAME}' tablosu oluşturuluyor ---")
         cursor.execute(f"DROP TABLE IF EXISTS {TABLE_NAME};")
-        
-        # DataFrame'in sütun isimlerinden ve tiplerinden bir CREATE TABLE sorgusu oluştur
         cols = df.columns
-        # Tüm sütunları metin olarak oluşturuyoruz (VARCHAR)
         col_definitions = ", ".join([f'"{col}" VARCHAR' for col in cols])
         create_table_query = f"CREATE TABLE {TABLE_NAME} ({col_definitions});"
         cursor.execute(create_table_query)
         print("Yeni tablo başarıyla oluşturuldu.")
-
-        # DataFrame'i CSV formatında bellekte bir dosyaya yaz
-        buffer = io.StringIO()
-        df.to_csv(buffer, index=False, header=False, sep='\t')
-        buffer.seek(0) # Dosyanın başına geri dön
         
-        # PostgreSQL'in en hızlı yükleme metodu olan COPY komutunu kullan
-        print("COPY komutu ile hızlı veri aktarımı başlıyor. Bu işlem birkaç dakika sürebilir...")
+        print(f"\n--- Adım C: Veri {CHUNKSIZE} satırlık parçalar halinde yükleniyor ---")
         start_time = time.time()
         
-        cursor.copy_expert(f"COPY {TABLE_NAME} FROM STDIN WITH CSV HEADER FALSE DELIMITER E'\\t'", buffer)
-        
-        conn.commit() # Değişiklikleri veritabanına işle
+        # --- YENİ MANTIĞIMIZ BURADA (CHUNKING) ---
+        for i in range(0, len(df), CHUNKSIZE):
+            chunk = df.iloc[i:i+CHUNKSIZE]
+            
+            buffer = io.StringIO()
+            chunk.to_csv(buffer, index=False, header=False, sep='\t')
+            buffer.seek(0)
+            
+            cursor.copy_expert(f"COPY {TABLE_NAME} FROM STDIN WITH CSV HEADER FALSE DELIMITER E'\\t'", buffer)
+            
+            # İlerleme durumu bildir
+            print(f"  {min(i + CHUNKSIZE, len(df))} / {len(df)} satır yüklendi...")
+
+        conn.commit()
 
         end_time = time.time()
         total_time = end_time - start_time
@@ -69,13 +59,12 @@ def upload_data_to_db_professional():
 
     except Exception as e:
         if conn:
-            conn.rollback() # Hata durumunda değişiklikleri geri al
+            conn.rollback()
         print(f"HATA: İşlem sırasında bir sorun oluştu: {e}")
     finally:
         if conn:
-            conn.close() # Ne olursa olsun bağlantıyı kapat
+            conn.close()
             print("Veritabanı bağlantısı kapatıldı.")
 
-
 if __name__ == "__main__":
-    upload_data_to_db_professional()
+    upload_data_in_chunks()
