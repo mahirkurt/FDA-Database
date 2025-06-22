@@ -1,18 +1,19 @@
 import boto3
 import os
+import glob
+import time
 
-# --- Sizin Bilgilerinizle Doldurulmuş Bölüm ---
+# --- Yapılandırma ---
+# Lütfen bu bilgilerin doğruluğunu kontrol edin.
 ACCOUNT_ID = '8343e95913bcf207dcbd3f30dc44c79b'
 BUCKET_NAME = 'fda-data-files'
-ACCESS_KEY_ID = 'b8f8d21292d0503f054d7f7106c69a39' # Lütfen kendi güncel anahtarınızı kullanın
-SECRET_ACCESS_KEY = '0fb36669f982d5461b25b59bcd0bc9ba589e27eecac5ed9295adc1440cbc22f1' # Lütfen kendi güncel anahtarınızı kullanın
+ACCESS_KEY_ID = 'b8f8d21292d0503f054d7f7106c69a39' 
+SECRET_ACCESS_KEY = '0fb36669f982d5461b25b59bcd0bc9ba589e27eecac5ed9295adc1440cbc22f1' 
 
-# --- DEĞİŞİKLİK BURADA ---
-# Yüklenecek dosyanın adını yeni, normalize edilmiş dosya olarak değiştiriyoruz.
-SOURCE_FILE_PATH = 'fda_labels_normalized.parquet' 
-# --- DEĞİŞİKLİK SONU ---
+# Yüklenecek dosyaların bulunduğu klasörün adı
+SOURCE_DIRECTORY = 'partitioned_data'
 
-DESTINATION_OBJECT_NAME = os.path.basename(SOURCE_FILE_PATH)
+# --- Kod Başlangıcı ---
 S3_API_ENDPOINT = f'https://{ACCOUNT_ID}.r2.cloudflarestorage.com'
 
 try:
@@ -23,9 +24,20 @@ try:
         aws_secret_access_key=SECRET_ACCESS_KEY,
         region_name='auto',
     )
-    print(f"'{SOURCE_FILE_PATH}' dosyası '{BUCKET_NAME}' bucket'ına yükleniyor...")
-    print("Bu işlem dosya boyutuna bağlı olarak uzun sürebilir, lütfen bekleyin...")
-    s3.upload_file(SOURCE_FILE_PATH, BUCKET_NAME, DESTINATION_OBJECT_NAME)
-    print("\n--- YÜKLEME BAŞARIYLA TAMAMLANDI! ---")
-except Exception as e:
-    print(f"HATA: Yükleme sırasında bir sorun oluştu: {e}")
+    
+    # Kaynak klasördeki tüm .parquet dosyalarını bul
+    search_pattern = os.path.join(SOURCE_DIRECTORY, '*.parquet')
+    files_to_upload = glob.glob(search_pattern)
+    
+    if not files_to_upload:
+        print(f"HATA: '{SOURCE_DIRECTORY}' klasöründe yüklenecek .parquet dosyası bulunamadı.")
+    else:
+        print(f"Toplam {len(files_to_upload)} dosya yüklenecek. Başlatılıyor...")
+        start_time = time.time()
+        
+        # Her bir dosyayı yüklemek için döngü
+        for i, file_path in enumerate(files_to_upload):
+            object_name = os.path.basename(file_path)
+            print(f"  {i+1}/{len(files_to_upload)}: '{object_name}' yükleniyor...")
+            
+            s3.upload_
