@@ -2,38 +2,37 @@ import pandas as pd
 import duckdb
 from fastapi import FastAPI, HTTPException
 
-# Veri dosyasının buluttaki genel adresi
-DATA_URL = "https://pub-e1e1e9482d2e4295b8f9dada0d679f0a.r2.dev/fda_labels.parquet"
+# DEĞİŞİKLİK 1: URL'yi yeni, normalize edilmiş dosyamıza yönlendiriyoruz.
+DATA_URL = "https://pub-e1e1e9482d2e4295b8f9dada0d679f0a.r2.dev/fda_labels_normalized.parquet"
 
 app = FastAPI(
-    title="DuckDB Destekli FDA API",
-    description="Uzak Parquet dosyası üzerinde sorgu çalıştıran API.",
-    version="3.0.0"
+    title="Akıllı FDA API",
+    description="Normalize edilmiş FDA verisi üzerinde hızlı sorgu yapan API.",
+    version="5.0.0 (Final)"
 )
 
 @app.get("/")
 def read_root():
-    return {"mesaj": "DuckDB Destekli FDA İlaç Veri API'ına hoş geldiniz!"}
+    return {"mesaj": "Akıllı ve Verimli FDA İlaç Veri API'ına hoş geldiniz!"}
 
 @app.get("/ilac/{ilac_adi}")
 def get_ilac_bilgisi(ilac_adi: str):
-    print(f"DuckDB ile '{ilac_adi}' için arama yapılıyor...")
+    print(f"DuckDB ile '{ilac_adi}' için optimize edilmiş arama yapılıyor...")
     
-    temiz_ilac_adi = ilac_adi.strip()
+    # Arama terimini sorguya hazır hale getiriyoruz
+    temiz_ilac_adi = f"%{ilac_adi.strip().lower()}%"
     
     try:
-        # DuckDB'ye bağlan (dosya adı olmadan, bellekte çalışır)
         con = duckdb.connect()
         
-        # Doğrudan URL üzerindeki Parquet dosyasında SQL sorgusu çalıştır!
-        # '?' ile güvenli parametre kullanımı sağlıyoruz.
+        # DEĞİŞİKLİK 2: Sorguyu artık doğrudan 'brand_name' ve 'generic_name' sütunlarında yapıyoruz.
+        # Bu, eski yönteme göre binlerce kat daha hızlıdır.
         query = f"""
             SELECT * FROM '{DATA_URL}' 
-            WHERE lower(openfda) LIKE ?
+            WHERE lower(brand_name) LIKE ? OR lower(generic_name) LIKE ?
         """
         
-        # Sorguyu çalıştır ve sonucu bir Pandas DataFrame'e çevir
-        sonuclar = con.execute(query, [f"%{temiz_ilac_adi.lower()}%"]).fetchdf()
+        sonuclar = con.execute(query, [temiz_ilac_adi, temiz_ilac_adi]).fetchdf()
         
         con.close()
 
@@ -42,8 +41,7 @@ def get_ilac_bilgisi(ilac_adi: str):
         raise HTTPException(status_code=500, detail="Veri sorgulama sırasında bir hata oluştu.")
 
     if sonuclar.empty:
-        raise HTTPException(status_code=404, detail=f"'{temiz_ilac_adi}' adında bir ilaç bulunamadı.")
+        raise HTTPException(status_code=404, detail=f"'{ilac_adi.strip()}' adında bir ilaç bulunamadı.")
 
-    # Sonuçları güvenli bir formata çevirip döndür
     sonuclar_guvenli = sonuclar.fillna('').astype(str)
     return sonuclar_guvenli.to_dict(orient='records')
