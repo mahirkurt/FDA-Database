@@ -1,58 +1,51 @@
-import pandas as pd
-import duckdb
 from fastapi import FastAPI, HTTPException
-from fastapi.encoders import jsonable_encoder
-import string
+from sqlalchemy import create_engine, text
+import pandas as pd
+import os
 
-BASE_DATA_URL = "https://pub-e1e1e9482d2e4295b8f9dada0d679f0a.r2.dev"
+# Render'da ayarlayacağımız ortam değişkeninden veritabanı adresini alacak
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
-app = FastAPI(
-    title="Akıllı Bölümlenmiş FDA API",
-    description="Parçalanmış veri üzerinde sorgu yapan API.",
-    version="8.0.0 (Production-Ready)"
-)
+engine = None
+# Sadece DATABASE_URL tanımlıysa veritabanı motorunu oluştur
+if DATABASE_URL:
+    try:
+        engine = create_engine(DATABASE_URL)
+        print("Veritabanı bağlantı motoru başarıyla oluşturuldu.")
+    except Exception as e:
+        print(f"Veritabanı bağlantısı kurulamadı: {e}")
+else:
+    print("KRİTİK HATA: DATABASE_URL ortam değişkeni bulunamadı. Lütfen Render ayarlarınızı kontrol edin.")
+
+# API uygulamasını oluştur
+app = FastAPI(title="FDA Orange Book API", version="2.0.0 (Database-Powered)")
 
 @app.get("/")
 def read_root():
-    return {"mesaj": "Parçalanmış Veri API'ına hoş geldiniz!"}
+    return {"mesaj": "FDA Orange Book API'ına hoş geldiniz!", "veritabanı_durumu": "Bağlandı" if engine is not None else "Bağlantı Hatası"}
 
-@app.get("/ilac/{ilac_adi}")
-def get_ilac_bilgisi(ilac_adi: str):
-    print(f"DuckDB ile '{ilac_adi}' için optimize edilmiş arama yapılıyor...")
-    
-    ilac_adi_temiz = ilac_adi.strip().lower()
-    
-    if not ilac_adi_temiz:
-        raise HTTPException(status_code=400, detail="İlaç adı boş olamaz.")
+@app.get("/orangebook/arama")
+def search_orange_book(arama_terimi: str):
+    if engine is None:
+        raise HTTPException(status_code=500, detail="Veritabanı bağlantısı yapılandırılamadı.")
 
-    ilk_harf = ilac_adi_temiz[0]
-    if ilk_harf not in string.ascii_lowercase:
-        raise HTTPException(status_code=400, detail="Arama sadece harfle başlayabilir.")
-
-    DATA_URL_PARTITION = f"{BASE_DATA_URL}/labels_{ilk_harf}.parquet"
-    arama_terimi = f"%{ilac_adi_temiz}%"
+    # ILIKE, büyük/küçük harf duyarsız arama yapar
+    # LIMIT 100 ile çok fazla sonuç dönmesini engelliyoruz
+    query = text("""
+        SELECT * FROM orange_book_products 
+        WHERE "Drug_Name" ILIKE :search_term OR "Active_Ingredient" ILIKE :search_term
+        LIMIT 100;
+    """)
     
     try:
-        con = duckdb.connect()
-        query = f"""
-            SELECT * FROM read_parquet('{DATA_URL_PARTITION}') 
-            WHERE lower(CAST(brand_name AS VARCHAR)) LIKE ? OR lower(CAST(generic_name AS VARCHAR)) LIKE ?
-        """
-        sonuclar = con.execute(query, [arama_terimi, arama_terimi]).fetchdf()
-        con.close()
+        with engine.connect() as connection:
+            # params ile güvenli sorgulama yapıyoruz
+            sonuclar = pd.read_sql(query, connection, params={"search_term": f"%{arama_terimi}%"})
     except Exception as e:
-        if "404 Not Found" in str(e):
-             raise HTTPException(status_code=404, detail=f"'{ilac_adi.strip()}' adıyla başlayan ilaçlar için veri bulunamadı.")
-        print(f"HATA: DuckDB sorgusu sırasında bir sorun oluştu: {e}")
-        raise HTTPException(status_code=500, detail="Veri sorgulama sırasında bir hata oluştu.")
+        raise HTTPException(status_code=500, detail=f"Sorgu sırasında bir hata oluştu: {e}")
 
+    
     if sonuclar.empty:
-        raise HTTPException(status_code=404, detail=f"'{ilac_adi.strip()}' adında bir ilaç bulunamadı.")
+        raise HTTPException(status_code=404, detail=f"'{arama_terimi}' için sonuç bulunamadı.")
 
-    # --- NİHAİ ÇÖZÜM BURADA ---
-    # .fillna('').astype(str) gibi genel bir temizlik yerine,
-    # FastAPI'nin kendi akıllı dönüştürücüsünü kullanıyoruz.
-    # Bu dönüştürücü, NaN gibi değerleri JSON standardına uygun olan 'null' değerine
-    # otomatik olarak ve hatasız bir şekilde çevirir.
-    json_uyumlu_sonuclar = jsonable_encoder(sonuclar.to_dict(orient='records'))
-    return json_uyumlu_sonuclar
+    return sonuclar.to_dict(orient='records')
