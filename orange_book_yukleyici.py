@@ -11,37 +11,29 @@ TABLE_NAME = 'orange_book_products'
 DATABASE_URL = "postgresql://neondb_owner:npg_PQ0WeHbfjv1x@ep-fragrant-cell-a9ahgnn4-pooler.gwc.azure.neon.tech/neondb?sslmode=require"
 
 def update_orange_book_data():
-    """
-    FDA'in sitesinden en güncel Orange Book verisini indirir, işler
-    ve PostgreSQL veritabanına yükler.
-    """
     try:
-        # --- Adım 1: Veriyi İndirme ve Açma ---
         print("Orange Book verisi indiriliyor...")
-
-        # --- DEĞİŞİKLİK BURADA ---
-        # Kendimizi normal bir tarayıcı olarak tanıtmak için headers ekliyoruz
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        # isteği bu başlıklarla birlikte yapıyoruz
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         response = requests.get(ORANGE_BOOK_URL, headers=headers)
-        # --- DEĞİŞİKLİK SONU ---
-        
         response.raise_for_status()
 
         zip_file = zipfile.ZipFile(io.BytesIO(response.content))
         
         with zip_file.open('products.txt', 'r') as f:
-            col_names = ['Appl_Type', 'Appl_No', 'Product_No', 'Form', 'Strength', 'Reference_Drug', 'Drug_Name', 'Active_Ingredient', 'Submission_Status']
+            # --- DEĞİŞİKLİK BURADA: FDA'in resmi dokümantasyonundaki doğru sütun adları ---
+            col_names = [
+                'Ingredient', 'DF_Route', 'Trade_Name', 'Applicant', 'Strength', 
+                'Appl_Type_No', 'Product_No', 'TE_Code', 'Approval_Date', 
+                'RLD', 'RS', 'Type', 'Applicant_Full_Name'
+            ]
             df = pd.read_csv(io.TextIOWrapper(f, 'latin1'), sep='~', names=col_names, header=None).fillna('')
-            print("Veri başarıyla okundu ve DataFrame'e dönüştürüldü.")
+            print("Veri başarıyla okundu ve doğru sütunlarla DataFrame'e dönüştürüldü.")
 
-        # --- Adım 2: Veriyi Veritabanına Yükleme ---
         engine = create_engine(DATABASE_URL)
-        print(f"\n'{TABLE_NAME}' tablosuna veri yükleniyor...")
+        print(f"\n'{TABLE_NAME}' tablosuna doğru şema ile veri yükleniyor...")
         start_time = time.time()
         
+        # if_exists='replace' ile eski, hatalı tabloyu silip yenisini oluşturacak
         df.to_sql(TABLE_NAME, engine, if_exists='replace', index=False)
         
         end_time = time.time()
