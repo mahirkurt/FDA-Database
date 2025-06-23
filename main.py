@@ -1,13 +1,12 @@
 from fastapi import FastAPI, HTTPException
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine # 'text' import'unu kaldırdık
 import pandas as pd
 import os
 
-# Render'da ayarlayacağımız ortam değişkeninden veritabanı adresini alacak
+# Render'daki ortam değişkenlerinden veritabanı adresini alacak
 DATABASE_URL = os.environ.get("DATABASE_URL")
-
 engine = None
-# Sadece DATABASE_URL tanımlıysa veritabanı motorunu oluştur
+
 if DATABASE_URL:
     try:
         engine = create_engine(DATABASE_URL)
@@ -15,10 +14,9 @@ if DATABASE_URL:
     except Exception as e:
         print(f"Veritabanı bağlantısı kurulamadı: {e}")
 else:
-    print("KRİTİK HATA: DATABASE_URL ortam değişkeni bulunamadı. Lütfen Render ayarlarınızı kontrol edin.")
+    print("KRİTİK HATA: DATABASE_URL ortam değişkeni bulunamadı.")
 
-# API uygulamasını oluştur
-app = FastAPI(title="FDA Orange Book API", version="2.0.0 (Database-Powered)")
+app = FastAPI(title="Orange Book API", version="2.1.0 (Final-Fix)")
 
 @app.get("/")
 def read_root():
@@ -29,21 +27,21 @@ def search_orange_book(arama_terimi: str):
     if engine is None:
         raise HTTPException(status_code=500, detail="Veritabanı bağlantısı yapılandırılamadı.")
 
-    # ILIKE, büyük/küçük harf duyarsız arama yapar
-    # LIMIT 100 ile çok fazla sonuç dönmesini engelliyoruz
-    query = text("""
+    # --- DEĞİŞİKLİK BURADA ---
+    # Sorguyu artık basit bir metin (string) olarak tanımlıyoruz.
+    # Güvenli parametre stili olarak :search_term yerine %(search_term)s kullanıyoruz.
+    query = """
         SELECT * FROM orange_book_products 
-        WHERE "Drug_Name" ILIKE :search_term OR "Active_Ingredient" ILIKE :search_term
+        WHERE "Drug_Name" ILIKE %(search_term)s OR "Active_Ingredient" ILIKE %(search_term)s
         LIMIT 100;
-    """)
+    """
     
     try:
         with engine.connect() as connection:
-            # params ile güvenli sorgulama yapıyoruz
+            # params dictionary'si bu yeni stile uygun şekilde çalışır.
             sonuclar = pd.read_sql(query, connection, params={"search_term": f"%{arama_terimi}%"})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Sorgu sırasında bir hata oluştu: {e}")
-
     
     if sonuclar.empty:
         raise HTTPException(status_code=404, detail=f"'{arama_terimi}' için sonuç bulunamadı.")
