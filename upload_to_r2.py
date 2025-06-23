@@ -13,6 +13,7 @@ SECRET_ACCESS_KEY = '0fb36669f982d5461b25b59bcd0bc9ba589e27eecac5ed9295adc1440cb
 # Yüklenecek dosyaların bulunduğu klasörün adı
 SOURCE_DIRECTORY = 'partitioned_data'
 
+
 # --- Kod Başlangıcı ---
 S3_API_ENDPOINT = f'https://{ACCOUNT_ID}.r2.cloudflarestorage.com'
 
@@ -37,7 +38,15 @@ try:
         
         # Her bir dosyayı yüklemek için döngü
         for i, file_path in enumerate(files_to_upload):
+            # R2'deki dosya adı, sadece dosyanın kendi adı olacak (klasör olmadan)
             object_name = os.path.basename(file_path)
             print(f"  {i+1}/{len(files_to_upload)}: '{object_name}' yükleniyor...")
             
-            s3.upload_
+            s3.upload_file(file_path, BUCKET_NAME, object_name)
+        
+        end_time = time.time()
+        print(f"\n--- TÜM DOSYALAR BAŞARIYLA YÜKLENDİ! ---")
+        print(f"Toplam süre: {(end_time - start_time):.2f} saniye.")
+
+except Exception as e:
+    print(f"HATA: Yükleme sırasında bir sorun oluştu: {e}")
